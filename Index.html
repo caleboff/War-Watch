@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WARWATCH — Global Conflict Monitor</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #080B0F;
+      --surface:  #0E1419;
+      --border:   #1C2A35;
+      --amber:    #C8A84B;
+      --red:      #E84040;
+      --orange:   #E87D20;
+      --yellow:   #D4C244;
+      --teal:     #4A7A8A;
+      --text:     #E8E0D0;
+      --muted:    #7A8A94;
+      --dim:      #3A4A54;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      overflow: hidden;
+    }
+
+    /* ── SCROLLBARS ── */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── ANIMATIONS ── */
+    @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:.35} }
+    @keyframes spin    { to{transform:rotate(360deg)} }
+    @keyframes shimmer { 0%,100%{opacity:.2} 50%{opacity:.6} }
+    @keyframes fadeIn  { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+
+    /* ── LAYOUT ── */
+    #app { display:flex; flex-direction:column; height:100vh; width:100vw; overflow:hidden; }
+
+    /* ── TOP BAR ── */
+    #topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      height: 52px;
+      background: #060A0D;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      gap: 10px;
+      z-index: 100;
+    }
+    #topbar .logo {
+      display: flex; align-items: center; gap: 10px;
+    }
+    #topbar .logo-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--red); box-shadow: 0 0 10px var(--red);
+      animation: pulse 2s infinite;
+      flex-shrink: 0;
+    }
+    #topbar .logo-text {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 24px; color: var(--amber); letter-spacing: 4px;
+    }
+    #active-badge {
+      background: var(--red); color: #fff;
+      font-size: 9px; padding: 2px 7px;
+      font-weight: 700; letter-spacing: 1px;
+      flex-shrink: 0;
+    }
+    .nav-tabs { display:flex; gap:4px; flex-shrink:0; }
+    .nav-btn {
+      background: transparent; color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 4px 12px; font-size: 10px; letter-spacing: 2px;
+      cursor: pointer; font-family: 'IBM Plex Mono', monospace;
+      font-weight: 700; transition: all .15s;
+    }
+    .nav-btn.active { background: var(--amber); color: var(--bg); border-color: var(--amber); }
+    #search-input {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); padding: 5px 10px; font-size: 10px;
+      font-family: 'IBM Plex Mono', monospace; outline: none;
+      width: 150px; letter-spacing: 1px;
+    }
+    #search-input::placeholder { color: var(--dim); }
+
+    /* ── MAIN BODY ── */
+    #main { display:flex; flex:1; overflow:hidden; }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      width: 168px; background: #060A0D;
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow-y: auto; flex-shrink: 0;
+    }
+    .side-section { border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    .side-title {
+      padding: 10px 14px 6px;
+      font-size: 9px; letter-spacing: 2px;
+      color: var(--dim); font-weight: 700;
+    }
+    .filter-btn {
+      display: block; width: 100%;
+      background: transparent; color: var(--muted);
+      border: none; border-left: 2px solid transparent;
+      padding: 5px 14px; text-align: left; cursor: pointer;
+      font-size: 10px; letter-spacing: 1px;
+      font-family: 'IBM Plex Mono', monospace;
+      transition: all .15s;
+    }
+    .filter-btn:hover { color: var(--text); }
+    .filter-btn.active {
+      background: rgba(200,168,75,.12); color: var(--amber);
+      border-left-color: var(--amber);
+    }
+    .stat-line {
+      display: flex; justify-content: space-between;
+      padding: 3px 14px; font-size: 9px;
+    }
+    .stat-line span:first-child { color: var(--dim); letter-spacing: 1px; }
+    .stat-line span:last-child  { font-weight: 700; }
+
+    /* ── CENTER PANEL ── */
+    #center { flex:1; display:flex; flex-direction:column; overflow:hidden; position:relative; }
+
+    /* ── MAP ── */
+    #map-container {
+      flex: 1; position: relative; overflow: hidden;
+      background: #060A0D; min-height: 0;
+    }
+    #map-grid {
+      position: absolute; inset: 0; pointer-events: none; z-index: 1;
+      background-image:
+        linear-gradient(rgba(28,42,53,.22) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(28,42,53,.22) 1px, transparent 1px);
+      background-size: 50px 50px;
+    }
+    #year-watermark {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      font-family: 'Bebas Neue', cursive; font-size: 52px;
+      color: rgba(200,168,75,.06); letter-spacing: 10px;
+      pointer-events: none; user-select: none; z-index: 2; white-space: nowrap;
+    }
+    #map-svg {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%; display: block;
+    }
+    .country-path {
+      fill: #0D1E2A;
+      stroke: #1E3040;
+      stroke-width: 0.4px;
+      transition: fill 0.3s;
+    }
+    .country-path.highlighted { fill: rgba(232,64,64,0.18); }
+    .country-path:hover { fill: #162840; stroke: #2A4A60; }
+
+    /* map tooltip */
+    #map-tooltip {
+      position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+      background: rgba(6,10,13,.97); border: 1px solid var(--amber);
+      padding: 8px 16px; z-index: 20; pointer-events: none;
+      white-space: nowrap; display: none; animation: fadeIn .15s ease;
+    }
+    #map-tooltip .tt-name  { color: var(--amber); font-size: 11px; letter-spacing:1px; font-weight:700; }
+    #map-tooltip .tt-meta  { color: var(--muted); font-size: 10px; margin-left: 12px; }
+    #map-tooltip .tt-int   { font-size: 10px; margin-left: 12px; font-weight:700; }
+
+    /* map legend */
+    #map-legend {
+      position: absolute; top: 14px; right: 14px;
+      background: rgba(6,10,13,.92); border: 1px solid var(--border);
+      padding: 10px 14px; z-index: 10;
+    }
+    #map-legend .leg-title { font-size:8px; color:var(--dim); letter-spacing:2px; margin-bottom:8px; }
+    .leg-item { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+    .leg-dot  { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+    .leg-label{ font-size:9px; color:var(--muted); letter-spacing:1px; }
+    #map-count { font-size:8px; color:var(--dim); margin-top:6px; }
+
+    /* ── TIMELINE ── */
+    #timeline {
+      height: 68px; background: #060A0D;
+      border-top: 1px solid var(--border);
+      padding: 8px 20px; flex-shrink: 0;
+    }
+    #timeline-top {
+      display: flex; justify-content: space-between;
+      align-items: center; margin-bottom: 4px;
+    }
+    .tl-edge { font-size:9px; color:var(--dim); letter-spacing:2px; }
+    #year-display {
+      font-family: 'Bebas Neue', cursive; font-size: 20px;
+      color: var(--amber); letter-spacing: 3px; min-width: 52px; text-align:center;
+    }
+    #era-btns { display:flex; gap:4px; flex-wrap:wrap; justify-content:center; }
+    .era-btn {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--dim); font-size: 8px; padding: 2px 6px;
+      cursor: pointer; font-family: 'IBM Plex Mono', monospace;
+      letter-spacing: 1px; transition: all .15s;
+    }
+    .era-btn:hover { color: var(--amber); border-color: var(--amber); }
+    #timeline-track {
+      position: relative; height: 22px; display: flex; align-items: center;
+    }
+    #tl-rail {
+      position: absolute; left: 0; right: 0; height: 3px;
+      background: var(--border); border-radius: 2px; pointer-events: none;
+    }
+    #tl-fill {
+      height: 100%; background: linear-gradient(90deg, var(--teal), var(--amber), var(--red));
+      border-radius: 2px; transition: width .1s; pointer-events: none;
+    }
+    #tl-thumb {
+      position: absolute; width: 16px; height: 16px;
+      background: var(--amber); border-radius: 50%;
+      box-shadow: 0 0 10px rgba(200,168,75,.7);
+      pointer-events: none; transform: translateX(-50%);
+      transition: left .1s; z-index: 2;
+    }
+    #tl-input {
+      position: absolute; left: 0; width: 100%;
+      opacity: 0; cursor: pointer; height: 22px; margin: 0;
+      -webkit-appearance: none; appearance: none;
+    }
+
+    /* ── RIGHT PANEL ── */
+    #right-panel {
+      width: 268px; background: #060A0D;
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      flex-shrink: 0; overflow: hidden;
+    }
+    #panel-empty {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 14px; padding: 20px;
+    }
+    #panel-empty .empty-ring {
+      width: 48px; height: 48px; border: 1px solid var(--border);
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    }
+    #panel-empty .empty-ring-inner {
+      width: 24px; height: 24px; border: 1px solid var(--dim); border-radius: 50%;
+    }
+    #panel-empty p {
+      font-size: 10px; color: var(--dim); letter-spacing: 2px;
+      text-align: center; line-height: 1.9;
+    }
+    #panel-detail { display:none; flex-direction:column; flex:1; overflow:hidden; }
+
+    #panel-header {
+      border-bottom: 1px solid var(--border);
+      padding: 12px 14px; background: #0A0F14; flex-shrink:0;
+    }
+    .panel-status { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%; flex-shrink:0;
+    }
+    .status-dot.active { animation: pulse 2s infinite; }
+    .status-text { font-size:9px; letter-spacing:2px; }
+    #panel-name {
+      font-size: 12px; color: var(--text); font-weight: 700;
+      letter-spacing: 1px; line-height: 1.4; margin-bottom: 8px;
+    }
+    #panel-countries { display:flex; flex-wrap:wrap; gap:3px; }
+    .country-tag {
+      background: rgba(200,168,75,.1); border: 1px solid rgba(200,168,75,.2);
+      color: var(--amber); font-size: 8px; padding: 2px 6px; letter-spacing: 1px;
+    }
+
+    #panel-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid var(--border); flex-shrink:0;
+    }
+    .grid-cell {
+      padding: 7px 12px;
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .grid-cell:nth-child(even) { border-right: none; }
+    .grid-key { font-size:8px; color:var(--dim); letter-spacing:1px; margin-bottom:2px; }
+    .grid-val { font-size:9px; color:var(--text); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    #panel-briefing { flex:1; overflow-y:auto; padding:12px 14px; }
+    .briefing-title {
+      font-size: 8px; color: var(--amber); letter-spacing: 2px;
+      margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+    }
+    .briefing-title-dot { width:4px; height:4px; background:var(--amber); flex-shrink:0; }
+    #briefing-content { display:flex; flex-direction:column; gap:6px; }
+    .briefing-section-head {
+      font-size: 8px; color: var(--amber); letter-spacing: 2px;
+      font-weight: 700; border-left: 2px solid var(--amber);
+      padding-left: 6px; margin-top: 6px;
+    }
+    .briefing-para { font-size:10px; color:#A0B0B8; line-height:1.75; }
+    .shimmer-line {
+      height: 7px; background: var(--border); border-radius: 1px;
+      animation: shimmer 1.5s ease infinite;
+    }
+    #briefing-placeholder {
+      font-size: 9px; color: var(--dim); line-height: 1.75;
+    }
+    #generate-btn {
+      width: 100%; background: transparent;
+      border: 1px solid var(--amber); color: var(--amber);
+      padding: 7px; font-size: 9px; letter-spacing: 2px;
+      cursor: pointer; font-family: 'IBM Plex Mono', monospace;
+      transition: all .15s; margin-top: 8px;
+    }
+    #generate-btn:hover { background: rgba(200,168,75,.1); }
+
+    /* ── API KEY BAR ── */
+    #api-bar {
+      border-top: 1px solid var(--border);
+      padding: 8px 12px; background: #0A0F14; flex-shrink:0;
+    }
+    #api-label { font-size:8px; color:var(--dim); letter-spacing:2px; margin-bottom:5px; }
+    #api-row { display:flex; gap:4px; }
+    #api-input {
+      flex: 1; background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); padding: 4px 8px; font-size: 9px;
+      font-family: 'IBM Plex Mono', monospace; outline: none; min-width: 0;
+    }
+    #api-toggle, #api-set {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--dim); font-size: 8px; padding: 0 6px;
+      cursor: pointer; font-family: 'IBM Plex Mono', monospace; flex-shrink:0;
+    }
+    #api-set {
+      background: var(--amber); border-color: var(--amber);
+      color: var(--bg); font-weight: 700; padding: 0 8px; letter-spacing:1px;
+    }
+    #api-status { font-size:8px; color:var(--teal); letter-spacing:1px; margin-top:4px; display:none; }
+
+    /* ── VIEWS ── */
+    .view { display:none; flex:1; overflow:hidden; flex-direction:column; }
+    .view.active { display:flex; }
+
+    /* ── STATS VIEW ── */
+    #stats-view {
+      overflow-y: auto; padding: 16px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px; align-content: start; background: var(--bg);
+    }
+    .chart-card {
+      background: var(--surface); border: 1px solid var(--border); padding: 14px;
+    }
+    .chart-card-title {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 10px; color: var(--amber); letter-spacing: 2px; margin-bottom: 12px;
+    }
+    .chart-card-bar { width:3px; height:12px; background:var(--amber); flex-shrink:0; }
+    .chart-wrap { position:relative; }
+
+    /* ── ARCHIVE VIEW ── */
+    #archive-view { overflow-y:auto; background:var(--bg); }
+    #archive-table { width:100%; border-collapse:collapse; }
+    #archive-table thead { position:sticky; top:0; background:#060A0D; z-index:5; }
+    #archive-table th {
+      padding: 10px 12px; text-align: left;
+      font-size: 9px; color: var(--dim); letter-spacing: 2px;
+      font-weight: 700; white-space: nowrap;
+      border-bottom: 1px solid var(--border);
+    }
+    #archive-table td {
+      padding: 8px 12px; font-size: 10px;
+      border-bottom: 1px solid rgba(28,42,53,.5);
+      white-space: nowrap;
+    }
+    #archive-table tr { cursor:pointer; transition:background .1s; }
+    #archive-table tr:hover td { background:rgba(200,168,75,.05); }
+    .intensity-badge {
+      font-size: 9px; padding: 2px 6px; letter-spacing: 1px;
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 700px) {
+      #sidebar { display:none; }
+      #right-panel { width: 220px; }
+      #search-input { width: 100px; }
+      .nav-btn { padding: 4px 8px; font-size: 9px; }
+    }
+    @media (max-width: 520px) {
+      #right-panel { display:none; }
+      #topbar .logo-text { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div class="logo">
+      <div class="logo-dot"></div>
+      <span class="logo-text">WARWATCH</span>
+      <span id="active-badge">— ACTIVE</span>
+    </div>
+    <div class="nav-tabs">
+      <button class="nav-btn active" data-view="map">MAP</button>
+      <button class="nav-btn" data-view="stats">STATS</button>
+      <button class="nav-btn" data-view="archive">ARCHIVE</button>
+    </div>
+    <input id="search-input" type="text" placeholder="SEARCH..."/>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+
+    <!-- SIDEBAR -->
+    <div id="sidebar">
+      <div class="side-section">
+        <div class="side-title">THEATER</div>
+        <button class="filter-btn active" data-filter="region" data-val="All">ALL REGIONS</button>
+        <button class="filter-btn" data-filter="region" data-val="Africa">AFRICA</button>
+        <button class="filter-btn" data-filter="region" data-val="Middle East">MIDDLE EAST</button>
+        <button class="filter-btn" data-filter="region" data-val="Europe">EUROPE</button>
+        <button class="filter-btn" data-filter="region" data-val="Asia">ASIA</button>
+        <button class="filter-btn" data-filter="region" data-val="Americas">AMERICAS</button>
+        <button class="filter-btn" data-filter="region" data-val="Caucasus">CAUCASUS</button>
+      </div>
+      <div class="side-section">
+        <div class="side-title">TYPE</div>
+        <button class="filter-btn active" data-filter="type" data-val="All">ALL TYPES</button>
+        <button class="filter-btn" data-filter="type" data-val="Interstate">INTERSTATE</button>
+        <button class="filter-btn" data-filter="type" data-val="Civil War">CIVIL WAR</button>
+        <button class="filter-btn" data-filter="type" data-val="Insurgency">INSURGENCY</button>
+        <button class="filter-btn" data-filter="type" data-val="Genocide">GENOCIDE</button>
+        <button class="filter-btn" data-filter="type" data-val="Criminal">CRIMINAL</button>
+      </div>
+      <div class="side-section">
+        <div class="side-title">STATUS</div>
+        <button class="filter-btn active" data-filter="status" data-val="All">ALL</button>
+        <button class="filter-btn" data-filter="status" data-val="Active">ACTIVE</button>
+        <button class="filter-btn" data-filter="status" data-val="Resolved">RESOLVED</button>
+      </div>
+      <div class="side-section">
+        <div class="side-title">INTEL</div>
+        <div class="stat-line"><span>ACTIVE</span><span id="stat-active" style="color:var(--red)">0</span></div>
+        <div class="stat-line"><span>HIGH INTENSITY</span><span id="stat-high" style="color:var(--red)">0</span></div>
+        <div class="stat-line"><span>DATABASE</span><span id="stat-total" style="color:var(--amber)">0</span></div>
+        <div class="stat-line"><span>RESOLVED</span><span id="stat-resolved" style="color:var(--teal)">0</span></div>
+      </div>
+    </div>
+
+    <!-- CENTER -->
+    <div id="center">
+
+      <!-- MAP VIEW -->
+      <div id="map-view" class="view active">
+        <div id="map-container">
+          <div id="map-grid"></div>
+          <div id="year-watermark">2025</div>
+          <svg id="map-svg"></svg>
+          <div id="map-tooltip">
+            <span class="tt-name" id="tt-name"></span>
+            <span class="tt-meta" id="tt-years"></span>
+            <span class="tt-int"  id="tt-int"></span>
+          </div>
+          <div id="map-legend">
+            <div class="leg-title">INTENSITY</div>
+            <div class="leg-item"><div class="leg-dot" style="background:#E84040;box-shadow:0 0 4px #E84040"></div><span class="leg-label">HIGH</span></div>
+            <div class="leg-item"><div class="leg-dot" style="background:#E87D20;box-shadow:0 0 4px #E87D20"></div><span class="leg-label">MEDIUM</span></div>
+            <div class="leg-item"><div class="leg-dot" style="background:#D4C244;box-shadow:0 0 4px #D4C244"></div><span class="leg-label">LOW</span></div>
+            <div class="leg-item"><div class="leg-dot" style="background:#4A7A8A"></div><span class="leg-label">RESOLVED</span></div>
+            <div id="map-count"></div>
+          </div>
+        </div>
+        <!-- TIMELINE -->
+        <div id="timeline">
+          <div id="timeline-top">
+            <span class="tl-edge">1900</span>
+            <div id="era-btns">
+              <button class="era-btn" data-year="1914">WWI</button>
+              <button class="era-btn" data-year="1939">WWII</button>
+              <button class="era-btn" data-year="1950">KOREA</button>
+              <button class="era-btn" data-year="1965">VIETNAM</button>
+              <button class="era-btn" data-year="1991">POST-USSR</button>
+              <button class="era-btn" data-year="2001">9/11</button>
+              <button class="era-btn" data-year="2025">NOW</button>
+            </div>
+            <span id="year-display">2025</span>
+            <span class="tl-edge">2025</span>
+          </div>
+          <div id="timeline-track">
+            <div id="tl-rail"><div id="tl-fill" style="width:100%"></div></div>
+            <input id="tl-input" type="range" min="1900" max="2025" value="2025"/>
+            <div id="tl-thumb" style="left:100%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATS VIEW -->
+      <div id="stats-view" class="view">
+        <div class="chart-card">
+          <div class="chart-card-title"><div class="chart-card-bar"></div>CONFLICTS BY DECADE</div>
+          <div class="chart-wrap"><canvas id="chart-decade" height="160"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-title"><div class="chart-card-bar"></div>CONFLICTS BY REGION</div>
+          <div class="chart-wrap"><canvas id="chart-region" height="160"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-title"><div class="chart-card-bar"></div>CONFLICT TYPES</div>
+          <div class="chart-wrap"><canvas id="chart-type" height="160"></canvas></div>
+        </div>
+        <div class="chart-card" style="grid-column:1/-1">
+          <div class="chart-card-title"><div class="chart-card-bar"></div>TOP 10 DEADLIEST CONFLICTS</div>
+          <div id="deadliest-list"></div>
+        </div>
+      </div>
+
+      <!-- ARCHIVE VIEW -->
+      <div id="archive-view" class="view">
+        <table id="archive-table">
+          <thead>
+            <tr>
+              <th>CONFLICT</th><th>REGION</th><th>TYPE</th>
+              <th>FROM</th><th>TO</th><th>INTENSITY</th><th>CASUALTIES</th>
+            </tr>
+          </thead>
+          <tbody id="archive-body"></tbody>
+        </table>
+      </div>
+
+    </div><!-- /center -->
+
+    <!-- RIGHT PANEL -->
+    <div id="right-panel">
+      <div id="panel-empty">
+        <div class="empty-ring"><div class="empty-ring-inner"></div></div>
+        <p>SELECT A CONFLICT<br/>MARKER ON THE MAP<br/>TO VIEW BRIEFING</p>
+      </div>
+      <div id="panel-detail">
+        <div id="panel-header">
+          <div class="panel-status">
+            <div class="status-dot" id="status-dot"></div>
+            <span class="status-text" id="status-text"></span>
+          </div>
+          <div id="panel-name"></div>
+          <div id="panel-countries"></div>
+        </div>
+        <div id="panel-grid">
+          <div class="grid-cell"><div class="grid-key">TYPE</div><div class="grid-val" id="gv-type"></div></div>
+          <div class="grid-cell"><div class="grid-key">REGION</div><div class="grid-val" id="gv-region"></div></div>
+          <div class="grid-cell"><div class="grid-key">SINCE</div><div class="grid-val" id="gv-since"></div></div>
+          <div class="grid-cell"><div class="grid-key">ENDED</div><div class="grid-val" id="gv-ended"></div></div>
+          <div class="grid-cell"><div class="grid-key">DEATHS</div><div class="grid-val" id="gv-deaths" style="color:var(--red)"></div></div>
+          <div class="grid-cell"><div class="grid-key">CAUSE</div><div class="grid-val" id="gv-cause"></div></div>
+        </div>
+        <div id="panel-briefing">
+          <div class="briefing-title"><div class="briefing-title-dot"></div>INTELLIGENCE BRIEFING</div>
+          <div id="briefing-content">
+            <div id="briefing-placeholder"></div>
+          </div>
+        </div>
+      </div>
+      <div id="api-bar">
+        <div id="api-label">ANTHROPIC API KEY</div>
+        <div id="api-row">
+          <input id="api-input" type="password" placeholder="sk-ant-..."/>
+          <button id="api-toggle">○</button>
+          <button id="api-set">SET</button>
+        </div>
+        <div id="api-status">✓ KEY ACTIVE</div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════════
+const CONFLICTS = [
+  { id:1,  name:"Russia–Ukraine War",         countries:["Russia","Ukraine"],                lat:49.0,  lng:31.0,  start:2022, end:null, intensity:"high",   region:"Europe",      deaths:"500,000+",   type:"Interstate",  cause:"Territorial/Political" },
+  { id:2,  name:"Gaza–Israel War",            countries:["Israel","Palestine"],              lat:31.5,  lng:34.5,  start:2023, end:null, intensity:"high",   region:"Middle East", deaths:"45,000+",    type:"Interstate",  cause:"Territorial/Political" },
+  { id:3,  name:"Sudan Civil War",            countries:["Sudan"],                           lat:15.0,  lng:30.0,  start:2023, end:null, intensity:"high",   region:"Africa",      deaths:"20,000+",    type:"Civil War",   cause:"Power struggle" },
+  { id:4,  name:"Myanmar Civil War",          countries:["Myanmar"],                         lat:19.0,  lng:96.0,  start:2021, end:null, intensity:"high",   region:"Asia",        deaths:"50,000+",    type:"Civil War",   cause:"Military coup" },
+  { id:5,  name:"Sahel Insurgency",           countries:["Mali","Burkina Faso","Niger"],     lat:14.0,  lng:0.0,   start:2012, end:null, intensity:"high",   region:"Africa",      deaths:"30,000+",    type:"Insurgency",  cause:"Jihadist extremism" },
+  { id:6,  name:"Yemen Civil War",            countries:["Yemen"],                           lat:15.5,  lng:48.0,  start:2015, end:null, intensity:"high",   region:"Middle East", deaths:"377,000+",   type:"Civil War",   cause:"Political/Sectarian" },
+  { id:7,  name:"Somalia Conflict",           countries:["Somalia"],                         lat:6.0,   lng:46.0,  start:1991, end:null, intensity:"medium", region:"Africa",      deaths:"500,000+",   type:"Civil War",   cause:"State collapse" },
+  { id:8,  name:"DRC Eastern Conflict",       countries:["DR Congo"],                        lat:-1.5,  lng:29.0,  start:1996, end:null, intensity:"high",   region:"Africa",      deaths:"6,000,000+", type:"Civil War",   cause:"Ethnic/Resources" },
+  { id:9,  name:"Syrian Civil War",           countries:["Syria"],                           lat:34.8,  lng:38.9,  start:2011, end:null, intensity:"medium", region:"Middle East", deaths:"500,000+",   type:"Civil War",   cause:"Arab Spring" },
+  { id:10, name:"Afghan Insurgency",          countries:["Afghanistan"],                     lat:33.0,  lng:65.0,  start:2021, end:null, intensity:"medium", region:"Asia",        deaths:"200,000+",   type:"Insurgency",  cause:"Taliban/ISIS-K" },
+  { id:11, name:"Ethiopia–Tigray War",        countries:["Ethiopia"],                        lat:14.0,  lng:39.0,  start:2020, end:2022, intensity:"medium", region:"Africa",      deaths:"300,000+",   type:"Civil War",   cause:"Political/Ethnic" },
+  { id:12, name:"Nagorno-Karabakh",           countries:["Armenia","Azerbaijan"],            lat:40.0,  lng:46.5,  start:1988, end:2023, intensity:"low",    region:"Caucasus",    deaths:"30,000+",    type:"Interstate",  cause:"Territorial" },
+  { id:13, name:"Iraq Instability",           countries:["Iraq"],                            lat:33.0,  lng:44.0,  start:2014, end:null, intensity:"low",    region:"Middle East", deaths:"200,000+",   type:"Insurgency",  cause:"ISIS remnants" },
+  { id:14, name:"Cameroon Anglophone Crisis", countries:["Cameroon"],                        lat:5.5,   lng:10.0,  start:2017, end:null, intensity:"medium", region:"Africa",      deaths:"6,000+",     type:"Civil War",   cause:"Separatism" },
+  { id:15, name:"Mozambique Insurgency",      countries:["Mozambique"],                      lat:-13.0, lng:35.5,  start:2017, end:null, intensity:"medium", region:"Africa",      deaths:"4,000+",     type:"Insurgency",  cause:"Jihadist extremism" },
+  { id:16, name:"Nigeria (Boko Haram)",       countries:["Nigeria"],                         lat:11.5,  lng:13.0,  start:2009, end:null, intensity:"medium", region:"Africa",      deaths:"350,000+",   type:"Insurgency",  cause:"Jihadist extremism" },
+  { id:17, name:"Libyan Civil War",           countries:["Libya"],                           lat:27.0,  lng:17.0,  start:2014, end:null, intensity:"low",    region:"Africa",      deaths:"25,000+",    type:"Civil War",   cause:"Post-Gaddafi vacuum" },
+  { id:18, name:"Haiti Gang War",             countries:["Haiti"],                           lat:19.0,  lng:-72.3, start:2021, end:null, intensity:"high",   region:"Americas",    deaths:"5,000+",     type:"Criminal",    cause:"State collapse" },
+  { id:19, name:"Colombia FARC Remnants",     countries:["Colombia"],                        lat:4.0,   lng:-73.0, start:2016, end:null, intensity:"low",    region:"Americas",    deaths:"1,000+",     type:"Insurgency",  cause:"Post-peace dissidents" },
+  { id:20, name:"Mexico Drug War",            countries:["Mexico"],                          lat:24.0,  lng:-102.0,start:2006, end:null, intensity:"high",   region:"Americas",    deaths:"350,000+",   type:"Criminal",    cause:"Cartel violence" },
+  { id:21, name:"World War II",               countries:["Germany","Japan","Allied Powers"], lat:50.0,  lng:10.0,  start:1939, end:1945, intensity:"high",   region:"Global",      deaths:"70,000,000+",type:"Interstate",  cause:"Fascism/Expansion" },
+  { id:22, name:"World War I",                countries:["Germany","Austria","Allied"],      lat:49.0,  lng:6.0,   start:1914, end:1918, intensity:"high",   region:"Global",      deaths:"20,000,000+",type:"Interstate",  cause:"Alliance systems" },
+  { id:23, name:"Vietnam War",                countries:["Vietnam","USA"],                   lat:16.0,  lng:107.0, start:1955, end:1975, intensity:"high",   region:"Asia",        deaths:"3,500,000+", type:"Interstate",  cause:"Cold War" },
+  { id:24, name:"Korean War",                 countries:["North Korea","South Korea"],       lat:37.5,  lng:127.5, start:1950, end:1953, intensity:"high",   region:"Asia",        deaths:"5,000,000+", type:"Interstate",  cause:"Cold War/Division" },
+  { id:25, name:"Gulf War",                   countries:["Iraq","Coalition"],                lat:29.0,  lng:48.0,  start:1990, end:1991, intensity:"high",   region:"Middle East", deaths:"100,000+",   type:"Interstate",  cause:"Iraq invasion Kuwait" },
+  { id:26, name:"Rwandan Genocide",           countries:["Rwanda"],                          lat:-2.0,  lng:29.9,  start:1994, end:1994, intensity:"high",   region:"Africa",      deaths:"800,000+",   type:"Genocide",    cause:"Ethnic hatred" },
+  { id:27, name:"Bosnian War",                countries:["Bosnia","Serbia","Croatia"],       lat:44.0,  lng:17.5,  start:1992, end:1995, intensity:"high",   region:"Europe",      deaths:"100,000+",   type:"Civil War",   cause:"Yugoslav dissolution" },
+  { id:28, name:"Iran–Iraq War",              countries:["Iran","Iraq"],                     lat:32.0,  lng:48.0,  start:1980, end:1988, intensity:"high",   region:"Middle East", deaths:"1,000,000+", type:"Interstate",  cause:"Territorial/Ideological" },
+  { id:29, name:"Soviet–Afghan War",          countries:["USSR","Afghanistan"],              lat:33.9,  lng:66.0,  start:1979, end:1989, intensity:"high",   region:"Asia",        deaths:"2,000,000+", type:"Interstate",  cause:"Cold War" },
+  { id:30, name:"Six-Day War",                countries:["Israel","Egypt","Syria"],          lat:31.0,  lng:35.0,  start:1967, end:1967, intensity:"high",   region:"Middle East", deaths:"20,000+",    type:"Interstate",  cause:"Arab-Israeli conflict" },
+  { id:31, name:"Algerian War",               countries:["Algeria","France"],                lat:28.0,  lng:2.5,   start:1954, end:1962, intensity:"high",   region:"Africa",      deaths:"1,000,000+", type:"Interstate",  cause:"Independence" },
+  { id:32, name:"Chinese Civil War",          countries:["China"],                           lat:35.0,  lng:105.0, start:1927, end:1949, intensity:"high",   region:"Asia",        deaths:"8,000,000+", type:"Civil War",   cause:"Communist vs Nationalist" },
+  { id:33, name:"Spanish Civil War",          countries:["Spain"],                           lat:40.0,  lng:-4.0,  start:1936, end:1939, intensity:"high",   region:"Europe",      deaths:"500,000+",   type:"Civil War",   cause:"Political/Ideological" },
+  { id:34, name:"Iraq War (2003)",            countries:["Iraq","USA","Coalition"],          lat:33.3,  lng:44.4,  start:2003, end:2011, intensity:"high",   region:"Middle East", deaths:"600,000+",   type:"Interstate",  cause:"WMD/War on Terror" },
+  { id:35, name:"NATO–Afghanistan War",       countries:["Afghanistan","USA","NATO"],        lat:34.5,  lng:69.2,  start:2001, end:2021, intensity:"high",   region:"Asia",        deaths:"240,000+",   type:"Interstate",  cause:"9/11 response" },
+  { id:36, name:"South Sudan Civil War",      countries:["South Sudan"],                     lat:6.9,   lng:31.3,  start:2013, end:2020, intensity:"high",   region:"Africa",      deaths:"400,000+",   type:"Civil War",   cause:"Political/Ethnic" },
+  { id:37, name:"Falklands War",              countries:["Argentina","UK"],                  lat:-51.7, lng:-59.0, start:1982, end:1982, intensity:"high",   region:"Americas",    deaths:"900+",       type:"Interstate",  cause:"Territorial" },
+  { id:38, name:"Congo Crisis",               countries:["DR Congo"],                        lat:-4.0,  lng:23.0,  start:1960, end:1965, intensity:"high",   region:"Africa",      deaths:"100,000+",   type:"Civil War",   cause:"Post-colonial" },
+  { id:39, name:"Lebanese Civil War",         countries:["Lebanon"],                         lat:33.8,  lng:35.5,  start:1975, end:1990, intensity:"high",   region:"Middle East", deaths:"150,000+",   type:"Civil War",   cause:"Sectarian/Political" },
+  { id:40, name:"Sudanese Civil War (I)",     countries:["Sudan"],                           lat:10.0,  lng:30.0,  start:1983, end:2005, intensity:"high",   region:"Africa",      deaths:"2,000,000+", type:"Civil War",   cause:"Religious/Ethnic" },
+];
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+const state = {
+  year: 2025,
+  selectedId: null,
+  regionFilter: "All",
+  typeFilter:   "All",
+  statusFilter: "All",
+  search:       "",
+  apiKey:       "",
+  currentView:  "map",
+  briefingLoading: false,
+};
+
+const COLORS = { high:"#E84040", medium:"#E87D20", low:"#D4C244", resolved:"#4A7A8A" };
+
+function markerColor(c) {
+  return c.end !== null ? COLORS.resolved : (COLORS[c.intensity] || "#E8E0D0");
+}
+
+function getFiltered() {
+  return CONFLICTS.filter(c => {
+    if (state.search) {
+      const q = state.search.toLowerCase();
+      const hit = c.name.toLowerCase().includes(q)
+        || c.countries.join().toLowerCase().includes(q)
+        || String(c.start).includes(q)
+        || c.region.toLowerCase().includes(q);
+      if (!hit) return false;
+    }
+    if (state.regionFilter !== "All" && c.region !== state.regionFilter) return false;
+    if (state.typeFilter   !== "All" && c.type   !== state.typeFilter)   return false;
+    if (state.statusFilter === "Active"   && c.end !== null) return false;
+    if (state.statusFilter === "Resolved" && c.end === null) return false;
+    return true;
+  });
+}
+
+function getMapConflicts() {
+  return getFiltered().filter(c => c.start <= state.year && (c.end === null || c.end >= state.year));
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════════════════════
+let projection, pathGen, svgEl, gCountries, gMarkers, zoomBehavior;
+let rippleTimers = [];
+
+function getMapSize() {
+  const cont = document.getElementById("map-container");
+  const W = Math.max(cont.clientWidth  || 0, 300);
+  const H = Math.max(cont.clientHeight || 0, 200);
+  return { W, H };
+}
+
+function buildProjection(W, H) {
+  return d3.geoNaturalEarth1()
+    .scale(W / 6.1)
+    .translate([W / 2, H / 2]);
+}
+
+function initMap() {
+  const { W, H } = getMapSize();
+  svgEl = d3.select("#map-svg");
+
+  svgEl
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("preserveAspectRatio", "xMidYMid meet");
+
+  projection = buildProjection(W, H);
+  pathGen    = d3.geoPath().projection(projection);
+
+  zoomBehavior = d3.zoom()
+    .scaleExtent([0.8, 10])
+    .on("zoom", (e) => {
+      gCountries.attr("transform", e.transform);
+      gMarkers.attr("transform", e.transform);
+    });
+  svgEl.call(zoomBehavior);
+
+  gCountries = svgEl.append("g").attr("class", "g-countries");
+  gMarkers   = svgEl.append("g").attr("class", "g-markers");
+
+  // Ocean background
+  gCountries.append("rect")
+    .attr("x", -W * 3).attr("y", -H * 3)
+    .attr("width", W * 7).attr("height", H * 7)
+    .attr("fill", "#060D14");
+
+  // Load pure GeoJSON — no TopoJSON library needed
+  d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson")
+    .then(world => {
+      gCountries.selectAll("path.country-path")
+        .data(world.features)
+        .join("path")
+        .attr("class", "country-path")
+        .attr("d", pathGen);
+
+      renderMarkers();
+    })
+    .catch(err => {
+      console.error("Map load failed:", err);
+      // Try fallback GeoJSON source
+      d3.json("https://cdn.jsdelivr.net/npm/world-geojson@1.0.0/countries.json")
+        .then(world => {
+          const features = world.features || world;
+          gCountries.selectAll("path.country-path")
+            .data(features)
+            .join("path")
+            .attr("class", "country-path")
+            .attr("d", pathGen);
+          renderMarkers();
+        })
+        .catch(() => {
+          // Final fallback: just render markers without map outline
+          renderMarkers();
+        });
+    });
+}
+
+// Animate ripple rings using JS so they work in all browsers
+function startRippleAnimations() {
+  // Clear old timers
+  rippleTimers.forEach(t => cancelAnimationFrame(t));
+  rippleTimers = [];
+
+  const rings = document.querySelectorAll(".ripple-ring");
+  rings.forEach((ring, idx) => {
+    const delay = (idx % 3) * 800;
+    let start = null;
+    const duration = 2200;
+    const offset = delay;
+
+    function animate(ts) {
+      if (!document.contains(ring)) return; // element removed
+      if (start === null) start = ts;
+      const elapsed = (ts - start + offset) % duration;
+      const progress = elapsed / duration;
+      const r   = 5 + progress * 20;
+      const opacity = (1 - progress) * 0.7;
+      ring.setAttribute("r", r);
+      ring.setAttribute("opacity", opacity);
+      const id = requestAnimationFrame(animate);
+      rippleTimers.push(id);
+    }
+    const id = requestAnimationFrame(animate);
+    rippleTimers.push(id);
+  });
+}
+
+function renderMarkers() {
+  if (!gMarkers) return;
+  const visible = getMapConflicts();
+  const tooltip  = document.getElementById("map-tooltip");
+
+  // Stop old ripple animations
+  rippleTimers.forEach(t => cancelAnimationFrame(t));
+  rippleTimers = [];
+
+  gMarkers.selectAll("*").remove();
+
+  visible.forEach(c => {
+    const coords = projection([c.lng, c.lat]);
+    if (!coords || isNaN(coords[0]) || isNaN(coords[1])) return;
+    const [x, y] = coords;
+    const col     = markerColor(c);
+    const isActive = c.end === null;
+    const isSel    = state.selectedId === c.id;
+
+    const g = gMarkers.append("g")
+      .attr("transform", `translate(${x},${y})`)
+      .style("cursor", "pointer");
+
+    // Ripple rings for active conflicts (2 rings, offset timing)
+    if (isActive) {
+      g.append("circle")
+        .attr("class", "ripple-ring")
+        .attr("r", 5)
+        .attr("fill", "none")
+        .attr("stroke", col)
+        .attr("stroke-width", "1.2")
+        .attr("opacity", 0.6);
+      g.append("circle")
+        .attr("class", "ripple-ring")
+        .attr("r", 5)
+        .attr("fill", "none")
+        .attr("stroke", col)
+        .attr("stroke-width", "0.7")
+        .attr("opacity", 0.3);
+    }
+
+    // Selection dashed ring
+    if (isSel) {
+      const sel = g.append("circle")
+        .attr("r", 13)
+        .attr("fill", "none")
+        .attr("stroke", "#C8A84B")
+        .attr("stroke-width", "1.2")
+        .attr("stroke-dasharray", "4 3");
+
+      // Spin via JS
+      let angle = 0;
+      function spinRing() {
+        if (!document.contains(sel.node())) return;
+        angle += 0.3;
+        sel.attr("transform", `rotate(${angle})`);
+        const id = requestAnimationFrame(spinRing);
+        rippleTimers.push(id);
+      }
+      requestAnimationFrame(spinRing);
+    }
+
+    // Glow halo
+    g.append("circle")
+      .attr("r", isSel ? 9 : 6)
+      .attr("fill", col)
+      .attr("fill-opacity", "0.15");
+
+    // Main dot
+    g.append("circle")
+      .attr("r", isSel ? 6.5 : 4.5)
+      .attr("fill", col)
+      .attr("fill-opacity", "0.95")
+      .attr("stroke", isSel ? "#C8A84B" : "rgba(255,255,255,0.3)")
+      .attr("stroke-width", isSel ? "2" : "0.8");
+
+    // Hover & click
+    g.on("mouseenter touchstart", function() {
+        document.getElementById("tt-name").textContent  = c.name;
+        document.getElementById("tt-years").textContent = `${c.start}–${c.end || "ONGOING"}`;
+        const ti = document.getElementById("tt-int");
+        ti.textContent = c.end ? "RESOLVED" : c.intensity.toUpperCase();
+        ti.style.color = col;
+        tooltip.style.display = "block";
+      })
+      .on("mouseleave touchend", function() { tooltip.style.display = "none"; })
+      .on("click", function(event) {
+        event.stopPropagation();
+        selectConflict(c.id);
+      });
+  });
+
+  document.getElementById("map-count").textContent = `${visible.length} CONFLICTS SHOWN`;
+
+  // Start ripple animations after DOM update
+  requestAnimationFrame(startRippleAnimations);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PANEL
+// ═══════════════════════════════════════════════════════════
+function selectConflict(id) {
+  state.selectedId = id;
+  const c = CONFLICTS.find(x => x.id === id);
+  if (!c) return;
+
+  document.getElementById("panel-empty").style.display  = "none";
+  document.getElementById("panel-detail").style.display = "flex";
+
+  const col = markerColor(c);
+  const dot = document.getElementById("status-dot");
+  dot.style.background  = col;
+  dot.style.boxShadow   = `0 0 6px ${col}`;
+  dot.classList.toggle("active", c.end === null);
+
+  document.getElementById("status-text").textContent  = c.end ? "RESOLVED" : "● ACTIVE CONFLICT";
+  document.getElementById("status-text").style.color  = col;
+  document.getElementById("panel-name").textContent   = c.name.toUpperCase();
+
+  const ctag = document.getElementById("panel-countries");
+  ctag.innerHTML = c.countries.map(n => `<span class="country-tag">${n}</span>`).join("");
+
+  document.getElementById("gv-type").textContent   = c.type;
+  document.getElementById("gv-region").textContent = c.region;
+  document.getElementById("gv-since").textContent  = c.start;
+  document.getElementById("gv-ended").textContent  = c.end || "ONGOING";
+  document.getElementById("gv-ended").style.color  = c.end ? "#4A7A8A" : "#E84040";
+  document.getElementById("gv-deaths").textContent = c.deaths;
+  document.getElementById("gv-cause").textContent  = c.cause;
+
+  // briefing reset
+  const bc = document.getElementById("briefing-content");
+  bc.innerHTML = "";
+  if (!state.apiKey) {
+    bc.innerHTML = `<div id="briefing-placeholder">Enter your Anthropic API key below to unlock AI-powered intelligence briefings with live web search.</div>`;
+  } else {
+    const btn = document.createElement("button");
+    btn.id = "generate-btn";
+    btn.textContent = "GENERATE BRIEFING";
+    btn.onclick = () => fetchBriefing(c);
+    bc.appendChild(btn);
+  }
+
+  // re-render markers to show selection ring
+  renderMarkers();
+}
+
+// ═══════════════════════════════════════════════════════════
+// AI BRIEFING
+// ═══════════════════════════════════════════════════════════
+function fetchBriefing(c) {
+  if (!state.apiKey || state.briefingLoading) return;
+  state.briefingLoading = true;
+
+  const bc = document.getElementById("briefing-content");
+  // shimmer loading
+  bc.innerHTML = Array.from({length:6}, (_,i) =>
+    `<div class="shimmer-line" style="width:${65+i*5}%;animation-delay:${i*0.15}s"></div>`
+  ).join("") + `<div style="font-size:8px;color:var(--dim);letter-spacing:2px;margin-top:8px">RETRIEVING INTELLIGENCE...</div>`;
+
+  fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      "x-api-key":     state.apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 900,
+      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      messages: [{
+        role: "user",
+        content: `You are a neutral intelligence analyst. Write a structured conflict briefing for: "${c.name}" (${c.start}–${c.end || "present"}).
+
+Write exactly these section headers on their own line in ALL CAPS, followed by 2-3 sentences:
+
+BACKGROUND
+KEY FACTIONS
+CURRENT STATUS
+HUMANITARIAN IMPACT
+GEOPOLITICAL STAKES
+ASSESSMENT
+
+Be factual, neutral, and precise. Use present tense for ongoing conflicts.`
+      }]
+    })
+  })
+  .then(r => r.json())
+  .then(data => {
+    const text = (data.content || [])
+      .filter(b => b.type === "text")
+      .map(b => b.text)
+      .join("\n");
+    renderBriefing(text || "No data returned.");
+  })
+  .catch(err => {
+    bc.innerHTML = `<div style="font-size:10px;color:var(--red)">SIGNAL LOST: ${err.message}</div>`;
+  })
+  .finally(() => { state.briefingLoading = false; });
+}
+
+function renderBriefing(text) {
+  const bc = document.getElementById("briefing-content");
+  bc.innerHTML = "";
+  const lines = text.split("\n");
+  lines.forEach(line => {
+    if (!line.trim()) return;
+    const isHead = /^[A-Z ]{4,}$/.test(line.trim()) && line.trim().length < 35;
+    const el = document.createElement("div");
+    if (isHead) {
+      el.className = "briefing-section-head";
+      el.textContent = line.trim();
+    } else {
+      el.className = "briefing-para";
+      el.textContent = line;
+    }
+    bc.appendChild(el);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// TIMELINE
+// ═══════════════════════════════════════════════════════════
+function initTimeline() {
+  const input = document.getElementById("tl-input");
+  input.addEventListener("input", () => {
+    state.year = +input.value;
+    updateTimeline();
+    renderMarkers();
+    document.getElementById("year-watermark").textContent =
+      state.year === 2025 ? "LIVE FEED" : state.year;
+  });
+
+  document.querySelectorAll(".era-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.year = +btn.dataset.year;
+      document.getElementById("tl-input").value = state.year;
+      updateTimeline();
+      renderMarkers();
+      document.getElementById("year-watermark").textContent =
+        state.year === 2025 ? "LIVE FEED" : state.year;
+    });
+  });
+}
+
+function updateTimeline() {
+  const MIN = 1900, MAX = 2025;
+  const pct = ((state.year - MIN) / (MAX - MIN) * 100).toFixed(2);
+  document.getElementById("tl-fill").style.width  = pct + "%";
+  document.getElementById("tl-thumb").style.left  = pct + "%";
+  document.getElementById("year-display").textContent = state.year;
+}
+
+// ═══════════════════════════════════════════════════════════
+// STATS CHARTS
+// ═══════════════════════════════════════════════════════════
+let chartsInited = false;
+
+function initCharts() {
+  if (chartsInited) return;
+  chartsInited = true;
+
+  const font = "'IBM Plex Mono', monospace";
+  const gridColor = "rgba(28,42,53,0.8)";
+  const textColor = "#3A4A54";
+
+  Chart.defaults.color = textColor;
+  Chart.defaults.font.family = font;
+
+  // Decade
+  new Chart(document.getElementById("chart-decade"), {
+    type: "bar",
+    data: {
+      labels: ["1910s","1920s","1930s","1940s","1950s","1960s","1970s","1980s","1990s","2000s","2010s","2020s"],
+      datasets: [{ data:[12,6,9,18,14,22,19,21,28,24,31,22], backgroundColor:"#C8A84B", borderRadius:2 }]
+    },
+    options: {
+      plugins:{ legend:{ display:false } },
+      scales:{
+        x:{ grid:{ color:gridColor }, ticks:{ font:{size:8} } },
+        y:{ grid:{ color:gridColor }, ticks:{ font:{size:8} } }
+      }
+    }
+  });
+
+  // Region
+  new Chart(document.getElementById("chart-region"), {
+    type: "bar",
+    data: {
+      labels: ["Africa","Middle East","Asia","Europe","Americas","Global"],
+      datasets: [{ data:[24,18,15,8,11,4], backgroundColor:["#E84040","#C8A84B","#E87D20","#D4C244","#4A7A8A","#7A8A94"], borderRadius:2 }]
+    },
+    options: {
+      indexAxis:"y",
+      plugins:{ legend:{ display:false } },
+      scales:{
+        x:{ grid:{ color:gridColor }, ticks:{ font:{size:8} } },
+        y:{ grid:{ color:gridColor }, ticks:{ font:{size:9} } }
+      }
+    }
+  });
+
+  // Type donut
+  new Chart(document.getElementById("chart-type"), {
+    type: "doughnut",
+    data: {
+      labels: ["Civil War","Interstate","Insurgency","Genocide","Criminal","Other"],
+      datasets:[{ data:[38,28,22,5,4,3], backgroundColor:["#E84040","#C8A84B","#E87D20","#D4C244","#4A7A8A","#7A8A94"], borderWidth:0 }]
+    },
+    options: {
+      plugins:{ legend:{ position:"bottom", labels:{ font:{size:9}, padding:10 } } },
+      cutout:"45%"
+    }
+  });
+
+  // Deadliest list
+  const top10 = [...CONFLICTS].sort((a,b) => {
+    const parse = s => +(s||"0").replace(/[^0-9]/g,"") || 0;
+    return parse(b.deaths) - parse(a.deaths);
+  }).slice(0,10);
+
+  const maxVal = +(top10[0].deaths||"0").replace(/[^0-9]/g,"") || 1;
+  const list = document.getElementById("deadliest-list");
+  list.innerHTML = top10.map((c,i) => {
+    const val = +(c.deaths||"0").replace(/[^0-9]/g,"") || 1;
+    const w = Math.max(4, (val/maxVal*100)).toFixed(1);
+    return `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-size:9px;color:var(--dim);width:14px;text-align:right;flex-shrink:0">${i+1}</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+            <span style="font-size:9px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</span>
+            <span style="font-size:9px;color:var(--red);margin-left:8px;flex-shrink:0">${c.deaths}</span>
+          </div>
+          <div style="height:3px;background:var(--border);border-radius:2px">
+            <div style="width:${w}%;height:100%;background:linear-gradient(90deg,#E84040,#C8A84B);border-radius:2px"></div>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// ═══════════════════════════════════════════════════════════
+// ARCHIVE
+// ═══════════════════════════════════════════════════════════
+function renderArchive() {
+  const rows = getFiltered();
+  const body = document.getElementById("archive-body");
+  body.innerHTML = rows.map((c,i) => {
+    const col = markerColor(c);
+    const bg  = i % 2 === 0 ? "transparent" : "rgba(14,20,25,.4)";
+    return `
+      <tr style="background:${bg}" data-id="${c.id}">
+        <td style="color:var(--text);font-weight:700">${c.name}</td>
+        <td style="color:var(--muted)">${c.region}</td>
+        <td style="color:var(--muted)">${c.type}</td>
+        <td style="color:var(--muted)">${c.start}</td>
+        <td style="color:${c.end ? "var(--teal)" : "var(--red)"}">${c.end || "ONGOING"}</td>
+        <td><span class="intensity-badge" style="background:${col}22;color:${col}">${(c.intensity||"").toUpperCase()}</span></td>
+        <td style="color:var(--red);font-weight:700">${c.deaths}</td>
+      </tr>`;
+  }).join("");
+
+  body.querySelectorAll("tr").forEach(tr => {
+    tr.addEventListener("click", () => {
+      const id = +tr.dataset.id;
+      setView("map");
+      setTimeout(() => selectConflict(id), 50);
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// SIDEBAR STATS
+// ═══════════════════════════════════════════════════════════
+function updateSidebarStats() {
+  document.getElementById("stat-active").textContent   = CONFLICTS.filter(c => c.end === null).length;
+  document.getElementById("stat-high").textContent     = CONFLICTS.filter(c => !c.end && c.intensity === "high").length;
+  document.getElementById("stat-total").textContent    = CONFLICTS.length;
+  document.getElementById("stat-resolved").textContent = CONFLICTS.filter(c => c.end !== null).length;
+  document.getElementById("active-badge").textContent  = CONFLICTS.filter(c => c.end === null).length + " ACTIVE";
+}
+
+// ═══════════════════════════════════════════════════════════
+// VIEWS
+// ═══════════════════════════════════════════════════════════
+function setView(v) {
+  state.currentView = v;
+  document.querySelectorAll(".view").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll(".nav-btn").forEach(el => el.classList.remove("active"));
+
+  if (v === "map") {
+    document.getElementById("map-view").classList.add("active");
+    document.querySelector('[data-view="map"]').classList.add("active");
+    renderMarkers();
+  } else if (v === "stats") {
+    document.getElementById("stats-view").classList.add("active");
+    document.querySelector('[data-view="stats"]').classList.add("active");
+    setTimeout(initCharts, 50);
+  } else if (v === "archive") {
+    document.getElementById("archive-view").classList.add("active");
+    document.querySelector('[data-view="archive"]').classList.add("active");
+    renderArchive();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// FILTERS & SEARCH
+// ═══════════════════════════════════════════════════════════
+function initFilters() {
+  document.querySelectorAll(".filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const f = btn.dataset.filter;
+      const v = btn.dataset.val;
+      document.querySelectorAll(`.filter-btn[data-filter="${f}"]`).forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      if (f === "region") state.regionFilter = v;
+      if (f === "type")   state.typeFilter   = v;
+      if (f === "status") state.statusFilter = v;
+      renderMarkers();
+      if (state.currentView === "archive") renderArchive();
+    });
+  });
+
+  document.getElementById("search-input").addEventListener("input", e => {
+    state.search = e.target.value;
+    renderMarkers();
+    if (state.currentView === "archive") renderArchive();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// NAV
+// ═══════════════════════════════════════════════════════════
+function initNav() {
+  document.querySelectorAll(".nav-btn").forEach(btn => {
+    btn.addEventListener("click", () => setView(btn.dataset.view));
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// API KEY
+// ═══════════════════════════════════════════════════════════
+function initApiKey() {
+  let visible = false;
+  document.getElementById("api-toggle").addEventListener("click", () => {
+    visible = !visible;
+    document.getElementById("api-input").type = visible ? "text" : "password";
+    document.getElementById("api-toggle").textContent = visible ? "●" : "○";
+  });
+  document.getElementById("api-set").addEventListener("click", () => {
+    state.apiKey = document.getElementById("api-input").value.trim();
+    const status = document.getElementById("api-status");
+    if (state.apiKey) {
+      status.style.display = "block";
+      // refresh panel if conflict selected
+      if (state.selectedId) selectConflict(state.selectedId);
+    } else {
+      status.style.display = "none";
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// RESIZE
+// ═══════════════════════════════════════════════════════════
+function handleResize() {
+  if (!svgEl || !projection) return;
+  const { W, H } = getMapSize();
+  svgEl.attr("viewBox", `0 0 ${W} ${H}`);
+  projection = buildProjection(W, H);
+  pathGen    = d3.geoPath().projection(projection);
+  gCountries.selectAll("path.country-path").attr("d", pathGen);
+  renderMarkers();
+}
+
+// ═══════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════
+document.addEventListener("DOMContentLoaded", () => {
+  updateSidebarStats();
+  initFilters();
+  initNav();
+  initTimeline();
+  initApiKey();
+  initMap();
+  window.addEventListener("resize", handleResize);
+});
+</script>
+</body>
+</html>
